@@ -1,14 +1,7 @@
 package com.personal.cardvault.crypto
 
-import org.bouncycastle.crypto.InvalidCipherTextException
-import org.bouncycastle.crypto.digests.SHA512Digest
 import org.bouncycastle.crypto.generators.Argon2BytesGenerator
-import org.bouncycastle.crypto.generators.HKDFBytesGenerator
-import org.bouncycastle.crypto.modes.ChaCha20Poly1305
-import org.bouncycastle.crypto.params.AEADParameters
 import org.bouncycastle.crypto.params.Argon2Parameters
-import org.bouncycastle.crypto.params.HKDFParameters
-import org.bouncycastle.crypto.params.KeyParameter
 import java.nio.ByteBuffer
 import java.security.SecureRandom
 import javax.crypto.AEADBadTagException
@@ -24,7 +17,7 @@ data class KdfParams(val memoryKiB: Int, val iterations: Int, val parallelism: I
     }
 }
 
-/** The 512-bit key derived from the master password, plus what is needed to re-derive it. */
+/** The AES-256 key derived from the master password, plus what is needed to re-derive it. */
 class MasterKey(val bytes: ByteArray, val salt: ByteArray, val params: KdfParams) {
     fun wipe() = bytes.fill(0)
 }
@@ -37,9 +30,9 @@ object Crypto {
 }
 
 object Kdf {
-    const val MASTER_KEY_BYTES = 64 // 512 bits
+    const val KEY_BYTES = 32 // AES-256
 
-    fun derive(password: CharArray, salt: ByteArray, p: KdfParams): ByteArray {
+    fun derive(password: CharArray, salt: ByteArray, p: KdfParams, length: Int = KEY_BYTES): ByteArray {
         val params = Argon2Parameters.Builder(Argon2Parameters.ARGON2_id)
             .withVersion(Argon2Parameters.ARGON2_VERSION_13)
             .withSalt(salt)
@@ -49,83 +42,56 @@ object Kdf {
             .build()
         val generator = Argon2BytesGenerator()
         generator.init(params)
-        val out = ByteArray(MASTER_KEY_BYTES)
+        val out = ByteArray(length)
         generator.generateBytes(password, out)
         return out
-    }
-
-    /** HKDF-SHA512: splits the master key into independent per-cipher keys. */
-    fun subKey(master: ByteArray, info: String, length: Int = 32): ByteArray {
-        val hkdf = HKDFBytesGenerator(SHA512Digest())
-        hkdf.init(HKDFParameters(master, null, info.toByteArray(Charsets.UTF_8)))
-        return ByteArray(length).also { hkdf.generateBytes(it, 0, length) }
     }
 }
 
 /**
- * Password layer of the vault file.
+ * Password layer of the vault file: AES-256-GCM under a key derived from the master password.
  *
- * Layout: MAGIC | version | memKiB | iterations | parallelism | saltLen | salt | aesNonce | chachaNonce | ciphertext
+ * Layout: MAGIC | version | memKiB | iterations | parallelism | saltLen | salt | nonce | ciphertext+tag
  *
- * The plaintext is encrypted with AES-256-GCM, and that result is encrypted again with
- * ChaCha20-Poly1305 under a second, independent 256-bit key. Breaking the vault requires
- * breaking both ciphers. The whole header is authenticated by both layers.
+ * The whole header is passed as associated data, so changing any byte of it is detected.
  */
 object VaultCipher {
-    private val MAGIC = byteArrayOf('C'.code.toByte(), 'V'.code.toByte(), 'L'.code.toByte(), 'T'.code.toByte())
-    private const val VERSION: Byte = 1
-    private const val NONCE = 12
-    private const val TAG_BITS = 128
+    internal val MAGIC = byteArrayOf('C'.code.toByte(), 'V'.code.toByte(), 'L'.code.toByte(), 'T'.code.toByte())
+    const val VERSION = 2
+    internal const val NONCE = 12
+    internal const val TAG_BITS = 128
     const val SALT_BYTES = 32
 
-    private const val INFO_AES = "cardvault/v1/aes-256-gcm"
-    private const val INFO_CHACHA = "cardvault/v1/chacha20-poly1305"
-
     class Header(
+        val version: Int,
         val salt: ByteArray,
         val params: KdfParams,
-        val aesNonce: ByteArray,
-        val chachaNonce: ByteArray,
+        /** Number of header bytes; everything before this is authenticated as AAD. */
         val length: Int,
     )
 
     fun seal(plaintext: ByteArray, key: MasterKey): ByteArray {
-        val aesNonce = Crypto.randomBytes(NONCE)
-        val chachaNonce = Crypto.randomBytes(NONCE)
-        val header = writeHeader(key.salt, key.params, aesNonce, chachaNonce)
-        val kAes = Kdf.subKey(key.bytes, INFO_AES)
-        val kChaCha = Kdf.subKey(key.bytes, INFO_CHACHA)
-        try {
-            val inner = aesGcm(Cipher.ENCRYPT_MODE, kAes, aesNonce, header, plaintext)
-            val outer = chacha(true, kChaCha, chachaNonce, header, inner)
-            inner.fill(0)
-            return header + outer
-        } finally {
-            kAes.fill(0)
-            kChaCha.fill(0)
-        }
+        val nonce = Crypto.randomBytes(NONCE)
+        val header = ByteBuffer.allocate(4 + 1 + 12 + 1 + key.salt.size + NONCE)
+            .put(MAGIC).put(VERSION.toByte())
+            .putInt(key.params.memoryKiB).putInt(key.params.iterations).putInt(key.params.parallelism)
+            .put(key.salt.size.toByte()).put(key.salt)
+            .put(nonce)
+            .array()
+        return header + aesGcm(Cipher.ENCRYPT_MODE, key.bytes, nonce, header, plaintext)
     }
 
     fun open(blob: ByteArray, key: MasterKey): ByteArray {
         val h = readHeader(blob)
-        val aad = blob.copyOfRange(0, h.length)
-        val body = blob.copyOfRange(h.length, blob.size)
-        val kAes = Kdf.subKey(key.bytes, INFO_AES)
-        val kChaCha = Kdf.subKey(key.bytes, INFO_CHACHA)
-        try {
-            val inner = chacha(false, kChaCha, h.chachaNonce, aad, body)
-            try {
-                return aesGcm(Cipher.DECRYPT_MODE, kAes, h.aesNonce, aad, inner)
-            } finally {
-                inner.fill(0)
-            }
-        } catch (e: InvalidCipherTextException) {
-            throw WrongKeyException()
+        require(h.version == VERSION) { "Unsupported vault version ${h.version}" }
+        val nonce = blob.copyOfRange(h.length - NONCE, h.length)
+        return try {
+            aesGcm(
+                Cipher.DECRYPT_MODE, key.bytes, nonce,
+                blob.copyOfRange(0, h.length), blob.copyOfRange(h.length, blob.size),
+            )
         } catch (e: AEADBadTagException) {
             throw WrongKeyException()
-        } finally {
-            kAes.fill(0)
-            kChaCha.fill(0)
         }
     }
 
@@ -133,36 +99,22 @@ object VaultCipher {
         val buf = ByteBuffer.wrap(blob)
         val magic = ByteArray(4).also { buf.get(it) }
         require(magic.contentEquals(MAGIC)) { "Not a Coffer vault file" }
-        val version = buf.get()
-        require(version == VERSION) { "Unsupported vault version $version" }
+        val version = buf.get().toInt()
         val params = KdfParams(buf.int, buf.int, buf.int)
         val salt = ByteArray(buf.get().toInt() and 0xFF).also { buf.get(it) }
-        val aesNonce = ByteArray(NONCE).also { buf.get(it) }
-        val chachaNonce = ByteArray(NONCE).also { buf.get(it) }
-        return Header(salt, params, aesNonce, chachaNonce, buf.position())
+        val nonceBytes = when (version) {
+            VERSION -> NONCE
+            LegacyVaultV1.VERSION -> LegacyVaultV1.NONCE_BYTES
+            else -> throw IllegalArgumentException("Unsupported vault version $version")
+        }
+        buf.position(buf.position() + nonceBytes)
+        return Header(version, salt, params, buf.position())
     }
 
-    private fun writeHeader(salt: ByteArray, p: KdfParams, aesNonce: ByteArray, chachaNonce: ByteArray): ByteArray =
-        ByteBuffer.allocate(4 + 1 + 12 + 1 + salt.size + NONCE * 2)
-            .put(MAGIC).put(VERSION)
-            .putInt(p.memoryKiB).putInt(p.iterations).putInt(p.parallelism)
-            .put(salt.size.toByte()).put(salt)
-            .put(aesNonce).put(chachaNonce)
-            .array()
-
-    private fun aesGcm(mode: Int, key: ByteArray, nonce: ByteArray, aad: ByteArray, input: ByteArray): ByteArray {
+    internal fun aesGcm(mode: Int, key: ByteArray, nonce: ByteArray, aad: ByteArray, input: ByteArray): ByteArray {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(mode, SecretKeySpec(key, "AES"), GCMParameterSpec(TAG_BITS, nonce))
         cipher.updateAAD(aad)
         return cipher.doFinal(input)
-    }
-
-    private fun chacha(encrypt: Boolean, key: ByteArray, nonce: ByteArray, aad: ByteArray, input: ByteArray): ByteArray {
-        val cipher = ChaCha20Poly1305()
-        cipher.init(encrypt, AEADParameters(KeyParameter(key), TAG_BITS, nonce, aad))
-        val out = ByteArray(cipher.getOutputSize(input.size))
-        var len = cipher.processBytes(input, 0, input.size, out, 0)
-        len += cipher.doFinal(out, len)
-        return if (len == out.size) out else out.copyOf(len).also { out.fill(0) }
     }
 }

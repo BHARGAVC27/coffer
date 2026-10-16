@@ -7,6 +7,7 @@ import com.personal.cardvault.crypto.Crypto
 import com.personal.cardvault.crypto.DeviceKey
 import com.personal.cardvault.crypto.Kdf
 import com.personal.cardvault.crypto.KdfParams
+import com.personal.cardvault.crypto.LegacyVaultV1
 import com.personal.cardvault.crypto.MasterKey
 import com.personal.cardvault.crypto.VaultCipher
 import com.personal.cardvault.crypto.WrongKeyException
@@ -40,7 +41,7 @@ sealed interface UnlockResult {
 /**
  * Owns the encrypted vault file and the in-memory unlocked state.
  *
- * File = DeviceKey( ChaCha20-Poly1305( AES-256-GCM( cards JSON ) ) ), keys from Argon2id(password).
+ * File = DeviceKey-AES-256-GCM( AES-256-GCM( cards JSON ) ), inner key from Argon2id(password).
  * While locked, no key material or card data is held in memory.
  */
 class VaultRepository(context: Context) {
@@ -92,6 +93,10 @@ class VaultRepository(context: Context) {
             val attempts = prefs.failedAttempts + 1
             prefs.failedAttempts = attempts
 
+            if (header.version == LegacyVaultV1.VERSION) {
+                return@withContext unlockAndUpgradeLegacy(blob, header, password, attempts)
+            }
+
             val key = MasterKey(Kdf.derive(password, header.salt, header.params), header.salt, header.params)
             val plain = try {
                 VaultCipher.open(blob, key)
@@ -110,6 +115,34 @@ class VaultRepository(context: Context) {
         } finally {
             password.fill('\u0000')
         }
+    }
+
+    /** Opens a 1.0-format vault and immediately rewrites it in the current AES-256-GCM format. */
+    private suspend fun unlockAndUpgradeLegacy(
+        blob: ByteArray,
+        header: VaultCipher.Header,
+        password: CharArray,
+        attempts: Int,
+    ): UnlockResult {
+        val plain = try {
+            LegacyVaultV1.open(blob, password, header)
+        } catch (e: WrongKeyException) {
+            return onFailedAttempt(attempts)
+        }
+        val cards = try { CardCodec.decode(plain) } finally { plain.fill(0) }
+        val salt = Crypto.randomBytes(VaultCipher.SALT_BYTES)
+        val params = KdfParams.DEFAULT
+        val key = MasterKey(Kdf.derive(password, salt, params), salt, params)
+        withContext(NonCancellable) {
+            mutex.withLock {
+                writeVault(cards, key)
+                prefs.resetFailures()
+                setUnlockedLocked(key, cards)
+            }
+        }
+        // The stored fingerprint key belonged to the old format.
+        disableBiometric()
+        return UnlockResult.Success
     }
 
     private suspend fun onFailedAttempt(attempts: Int): UnlockResult {
@@ -235,9 +268,13 @@ class VaultRepository(context: Context) {
 
     suspend fun unlockWithBiometric(authenticatedCipher: Cipher): UnlockResult = withContext(Dispatchers.Default) {
         try {
-            val keyBytes = BiometricKey.open(authenticatedCipher, biometricFile.readBytes())
             val blob = readSealed()
             val header = VaultCipher.readHeader(blob)
+            if (header.version != VaultCipher.VERSION) {
+                disableBiometric()
+                return@withContext UnlockResult.Error("Enter your password once to finish updating your vault.")
+            }
+            val keyBytes = BiometricKey.open(authenticatedCipher, biometricFile.readBytes())
             val key = MasterKey(keyBytes, header.salt, header.params)
             val plain = try {
                 VaultCipher.open(blob, key)

@@ -9,5 +9,5 @@
 }
 
 # Bouncy Castle references JNDI/LDAP classes that don't exist on Android; we only use the
-# lightweight Argon2 / HKDF / ChaCha20-Poly1305 APIs.
+# lightweight Argon2 API (plus the reader that upgrades 1.0-format vaults).
 -dontwarn javax.naming.**
