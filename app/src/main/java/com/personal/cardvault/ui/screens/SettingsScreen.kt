@@ -187,7 +187,8 @@ fun SettingsScreen(vault: VaultRepository, onBack: () -> Unit) {
                 } else {
                     InfoRow(Icons.Outlined.Memory, "Hardware-backed protection", "The vault is sealed again with an AES-256 key held in the $protection. A copied vault file can't be opened on another device.")
                 }
-                InfoRow(Icons.Outlined.ScreenLockPortrait, "Screen protected", "Screenshots, screen recording and the recent-apps preview are blocked. Overlays are hidden.")
+                InfoRow(Icons.Outlined.ScreenLockPortrait, "Screen protected", "Screenshots, recordings, screen sharing and remote-control apps only see a black screen. Overlays are hidden.")
+                InfoRow(Icons.Outlined.PhonelinkLock, "Remote access blocked", "Coffer locks and hides everything if an app with screen access, USB debugging, screen recording or root is detected.")
                 InfoRow(Icons.Outlined.PhonelinkLock, "No backups, no leftovers", "Excluded from cloud and device-to-device backup. Copied values clear from the clipboard after 30 s.")
             }
 

@@ -25,7 +25,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.personal.cardvault.data.VaultRepository
 import com.personal.cardvault.data.VaultState
+import com.personal.cardvault.security.ThreatMonitor
 import com.personal.cardvault.ui.screens.CardDetailScreen
+import com.personal.cardvault.ui.screens.ProtectedScreen
 import com.personal.cardvault.ui.screens.EditCardScreen
 import com.personal.cardvault.ui.screens.SettingsScreen
 import com.personal.cardvault.ui.screens.SetupScreen
@@ -41,8 +43,13 @@ private sealed interface Route {
 }
 
 @Composable
-fun AppRoot(vault: VaultRepository) {
+fun AppRoot(vault: VaultRepository, monitor: ThreatMonitor) {
     val state by vault.state.collectAsState()
+    val threats by monitor.threats.collectAsState()
+    if (threats.isNotEmpty()) {
+        ProtectedScreen(threats, onCheckAgain = monitor::refresh)
+        return
+    }
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         AnimatedContent(
             targetState = state,

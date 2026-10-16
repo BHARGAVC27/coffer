@@ -8,9 +8,12 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.personal.cardvault.data.VaultRepository
+import com.personal.cardvault.security.ThreatMonitor
 
 class CardVaultApp : Application() {
     lateinit var vault: VaultRepository
+        private set
+    lateinit var threats: ThreatMonitor
         private set
 
     private val handler = Handler(Looper.getMainLooper())
@@ -20,6 +23,8 @@ class CardVaultApp : Application() {
     override fun onCreate() {
         super.onCreate()
         vault = VaultRepository(this)
+        threats = ThreatMonitor(this) { vault.lock() }
+        threats.start()
 
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStop(owner: LifecycleOwner) {
