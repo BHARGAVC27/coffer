@@ -179,13 +179,13 @@ fun SettingsScreen(vault: VaultRepository, onBack: () -> Unit) {
 
             SectionLabel("How your data is protected")
             Group {
-                InfoRow(Icons.Outlined.WifiOff, "No internet permission", "The app is built without network access. It physically cannot send anything anywhere.")
-                InfoRow(Icons.Outlined.Key, "Argon2id key derivation", "Your password is stretched with 64 MiB of memory-hard hashing into a 512-bit master key.")
-                InfoRow(Icons.Outlined.Shield, "Two ciphers, two keys", "Cards are encrypted with AES-256-GCM, then again with ChaCha20-Poly1305, using independent 256-bit keys.")
+                InfoRow(Icons.Outlined.WifiOff, "Fully offline", "Coffer has no internet permission. It cannot send data anywhere.")
+                InfoRow(Icons.Outlined.Shield, "AES-256 encryption", "Every card is encrypted with AES-256-GCM. Any change to the stored data is detected.")
+                InfoRow(Icons.Outlined.Key, "Password-derived key", "Your encryption key is derived from your master password with Argon2id, which makes guessing slow and costly.")
                 if (protection.startsWith("Software") || protection == "Unknown") {
-                    InfoRow(Icons.Outlined.Memory, "Device-bound key", "A third layer uses a key in the Android Keystore. This device reports no secure hardware, so that layer is software-only here.")
+                    InfoRow(Icons.Outlined.Memory, "Device-bound encryption", "The vault is sealed again with an AES-256 key from the Android Keystore. This device has no secure hardware, so that key is software-protected.")
                 } else {
-                    InfoRow(Icons.Outlined.Memory, "Bound to this phone's hardware", "A third layer uses a non-exportable key in the $protection. A copied vault file is useless elsewhere.")
+                    InfoRow(Icons.Outlined.Memory, "Hardware-backed protection", "The vault is sealed again with an AES-256 key held in the $protection. A copied vault file can't be opened on another device.")
                 }
                 InfoRow(Icons.Outlined.ScreenLockPortrait, "Screen protected", "Screenshots, screen recording and the recent-apps preview are blocked. Overlays are hidden.")
                 InfoRow(Icons.Outlined.PhonelinkLock, "No backups, no leftovers", "Excluded from cloud and device-to-device backup. Copied values clear from the clipboard after 30 s.")

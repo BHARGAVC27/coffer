@@ -21,16 +21,16 @@ The APK is signed with this PC's local debug key. Install later updates from the
 ## How the data is protected
 
 ```
-vault.bin = Keystore-AES-256-GCM( ChaCha20-Poly1305( AES-256-GCM( cards JSON ) ) )
-                 ^ hardware key            ^ key 2            ^ key 1
-key 1, key 2 = HKDF-SHA512( Argon2id(password, 64 MiB, t=3) -> 512-bit master key )
+vault.bin = AES-256-GCM[hardware key]( AES-256-GCM[password key]( cards ) )
+password key = Argon2id(password, random salt, 64 MiB, 3 passes) -> 256 bits
 ```
 
 - **No `INTERNET` permission.** The manifest strips it, so the OS blocks every network call.
-- **Argon2id** stretches the password into a 512-bit master key, which is split into two independent 256-bit keys.
-- **Cascade encryption.** AES-256-GCM, then ChaCha20-Poly1305. Both are authenticated and any tampering is detected.
-- **Device-bound outer layer.** A non-exportable Android Keystore key (StrongBox when the phone has it, otherwise the TEE). A copied vault file can't be brute-forced on another machine.
-- **Fingerprint unlock (optional).** A copy of the master key is sealed under a Keystore key that only opens after a strong biometric check. Enrolling a new fingerprint invalidates it.
+- **AES-256-GCM encryption.** Authenticated encryption with a fresh random nonce on every save. The file header is authenticated too, so any tampering is detected.
+- **Argon2id key derivation.** The memory-hard Argon2id function turns the master password into the AES-256 key, so each password guess is slow and expensive.
+- **Hardware-backed outer layer.** The encrypted vault is sealed again with a non-exportable AES-256 key in the Android Keystore (StrongBox when the phone has it, otherwise the TEE). A copied vault file can't be brute-forced on another machine.
+- **Fingerprint unlock (optional).** A copy of the vault key is sealed under a Keystore key that only opens after a strong biometric check. Enrolling a new fingerprint invalidates it.
+- **Upgrade from 1.0.** Vaults created by version 1.0 are read once and rewritten in the current format on the next password unlock.
 - `FLAG_SECURE` (no screenshots, recordings or recents thumbnail), overlay hiding, tapjacking filter.
 - Backups and device transfer are disabled. Data lives in `noBackupFilesDir`.
 - Auto-lock when you leave the app (configurable) and after 5 minutes idle. Lockout gets longer after 5 wrong passwords. Optional erase after 10.
@@ -46,4 +46,4 @@ key 1, key 2 = HKDF-SHA512( Argon2id(password, 64 MiB, t=3) -> 512-bit master ke
 
 ## Tests
 
-`gradlew.bat testDebugUnitTest` runs the crypto checks: round trip, wrong password, tamper detection, 512-bit key, card network and Luhn checks.
+`gradlew.bat testDebugUnitTest` runs the crypto checks: AES-256 round trip, wrong password, tamper detection, reading 1.0-format vaults, and card network and Luhn checks.
