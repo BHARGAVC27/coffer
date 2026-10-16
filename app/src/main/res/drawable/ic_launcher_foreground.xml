@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Coffer mark: a gold "C" ring with a keyhole, inside the 66dp adaptive-icon safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- faint outer ring for depth -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#26E3B964"
+        android:strokeWidth="0.8"
+        android:pathData="M54,54m-29,0a29,29 0,1 1,58 0a29,29 0,1 1,-58 0" />
+    <!-- the C -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeWidth="8.5"
+        android:strokeLineCap="round"
+        android:pathData="M69.32,66.86A20,20 0,1 1,69.32 41.14">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:type="linear"
+                android:startX="34" android:startY="34"
+                android:endX="74" android:endY="74"
+                android:startColor="#FFF6DC95"
+                android:centerColor="#FFE3B964"
+                android:endColor="#FFAE7F2C" />
+        </aapt:attr>
+    </path>
+    <!-- keyhole -->
+    <path android:pathData="M54,50.5m-4.6,0a4.6,4.6 0,1 1,9.2 0a4.6,4.6 0,1 1,-9.2 0M52.1,53.5L50.6,62.2Q50.4,63.4 51.6,63.4L56.4,63.4Q57.6,63.4 57.4,62.2L55.9,53.5Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="50" android:startY="46"
+                android:endX="58" android:endY="64"
+                android:startColor="#FFF6DC95"
+                android:endColor="#FFC8963E" />
+        </aapt:attr>
+    </path>
+</vector>

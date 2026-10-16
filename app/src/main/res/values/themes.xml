@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.CardVault" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/vault_bg</item>
+        <item name="android:colorBackground">@color/vault_bg</item>
+    </style>
+    <color name="vault_bg">#FF0D0E12</color></resources>
