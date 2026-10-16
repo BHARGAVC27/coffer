@@ -8,15 +8,18 @@ The logo is a gold "C" with a keyhole. The source files are `branding/coffer-ico
 
 ## Install
 
-Build (or reuse) the release APK and install it with USB debugging on:
+Download the latest `Coffer-x.y.apk` from [Releases](https://github.com/BHARGAVC27/coffer/releases), open it on your phone, and allow "install unknown apps" when asked. Requires Android 9 or newer.
+
+Release signing certificate (SHA-256):
+`C1:9A:F7:6A:E1:78:42:59:CC:F2:F1:69:55:70:DC:36:75:35:9F:74:2D:18:6C:9A:07:0C:59:C5:44:8A:3E:E5`
+
+### Building from source
 
 ```
 gradlew.bat assembleRelease
-adb install app\build\outputs\apk\release\app-release.apk
 ```
 
-Or copy `app-release.apk` to the phone and open it (allow "install unknown apps" when asked).
-The APK is signed with this PC's local debug key. Install later updates from the same PC, or Android will refuse to update it.
+Release builds are signed with the key described in `~/.coffer-signing/keystore.properties` (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`). If that file doesn't exist, the build falls back to the local debug key.
 
 ## How the data is protected
 
